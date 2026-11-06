@@ -32,6 +32,7 @@ func (h *httpSource) Crawl(ctx context.Context, opts CrawlOptions) (*CrawlResult
 type crawlState struct {
 	mu                sync.Mutex
 	wordSet           map[string]struct{}
+	wordFreq          map[string]int
 	emailSet          map[string]struct{}
 	metaSet           map[string]struct{}
 	pageContexts      []string
@@ -49,6 +50,7 @@ type crawlState struct {
 func (s *crawlState) addWords(text string) {
 	for _, w := range words.NormalizeAndSplit(text) {
 		s.wordSet[w] = struct{}{}
+		s.wordFreq[w]++
 	}
 }
 
@@ -75,7 +77,7 @@ func crawlHTTP(ctx context.Context, opts CrawlOptions) (*CrawlResult, error) {
 		if ttl == 0 {
 			ttl = time.Hour
 		}
-		if cached, ok := loadCache(opts.URL, opts.Depth, ttl); ok {
+		if cached, ok := loadCache(opts.URL, opts.Depth, ttl, opts); ok {
 			return cached, nil
 		}
 	}
@@ -87,6 +89,7 @@ func crawlHTTP(ctx context.Context, opts CrawlOptions) (*CrawlResult, error) {
 
 	s := &crawlState{
 		wordSet:    make(map[string]struct{}),
+		wordFreq:   make(map[string]int),
 		emailSet:   make(map[string]struct{}),
 		metaSet:    make(map[string]struct{}),
 		opts:       opts,
@@ -128,6 +131,7 @@ func crawlHTTP(ctx context.Context, opts CrawlOptions) (*CrawlResult, error) {
 
 	result := &CrawlResult{
 		Words:    mapKeys(s.wordSet),
+		WordFreq: s.wordFreq,
 		Emails:   mapKeys(s.emailSet),
 		Metadata: mapKeys(s.metaSet),
 		Secrets:  s.secrets,
@@ -138,7 +142,7 @@ func crawlHTTP(ctx context.Context, opts CrawlOptions) (*CrawlResult, error) {
 	}
 
 	if !opts.NoCache {
-		saveCache(opts.URL, opts.Depth, result)
+		saveCache(opts.URL, opts.Depth, result, opts)
 	}
 
 	return result, nil

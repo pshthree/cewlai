@@ -49,6 +49,33 @@ func TestMutateWords_LengthFilter(t *testing.T) {
 	}
 }
 
+func TestMutateWords_LengthFilterRunes(t *testing.T) {
+	// "café" is 4 runes / 5 bytes. With MinLength=4 the base word must be
+	// kept; a byte-based check would drop it only above 5, and MaxLength=4
+	// must still admit it. This guards the rune-count fix.
+	cfg := DefaultMutateConfig()
+	cfg.Capitalize = false
+	cfg.Uppercase = false
+	cfg.Lowercase = false
+	cfg.Reverse = false
+	cfg.LeetEnabled = false
+	cfg.Suffixes = nil
+	cfg.Prefixes = nil
+	cfg.MinLength = 4
+	cfg.MaxLength = 4
+
+	result := MutateWords([]string{"café"}, cfg)
+	found := false
+	for _, w := range result {
+		if w == "café" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("MutateWords dropped 4-rune word %q under rune bounds 4..4: got %v", "café", result)
+	}
+}
+
 func TestMutateWords_DisableFeatures(t *testing.T) {
 	cfg := DefaultMutateConfig()
 	cfg.Reverse = false

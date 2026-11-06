@@ -11,6 +11,10 @@ import (
 	"time"
 )
 
+// modelsListTimeout bounds the generic OpenAI-compatible /models lookup so a
+// hung or unresponsive endpoint cannot stall the CLI indefinitely.
+const modelsListTimeout = 30 * time.Second
+
 type modelEntry struct {
 	ID string `json:"id"`
 }
@@ -66,15 +70,35 @@ func ListModels(provider, apiKey, baseURL string) {
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
-	resp, err := http.DefaultClient.Do(req)
+	client := &http.Client{Timeout: modelsListTimeout}
+	resp, err := client.Do(req)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
+	// Check the status before decoding: a 401/403/5xx body is not a model
+	// list, so decoding it blind would surface as a misleading parse error
+	// (or an empty list) instead of the real auth/HTTP problem.
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		msg := strings.TrimSpace(string(body))
+		switch resp.StatusCode {
+		case http.StatusUnauthorized, http.StatusForbidden:
+			fmt.Fprintf(os.Stderr, "Error: %s rejected the request (status %d). Check --api-key or the provider env var.\n", provider, resp.StatusCode)
+		default:
+			if msg != "" {
+				fmt.Fprintf(os.Stderr, "Error: %s returned status %d: %s\n", provider, resp.StatusCode, msg)
+			} else {
+				fmt.Fprintf(os.Stderr, "Error: %s returned status %d\n", provider, resp.StatusCode)
+			}
+		}
+		os.Exit(1)
+	}
+
 	var models modelList
-	if err := json.NewDecoder(resp.Body).Decode(&models); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&models); err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing response: %v\n", err)
 		os.Exit(1)
 	}
