@@ -37,7 +37,12 @@ type CrawlOptions struct {
 }
 
 type CrawlResult struct {
-	Words    []string
+	Words []string
+	// WordFreq maps a crawled word to how many times it was seen in page
+	// prose (attributes, comments, body text). Structural tokens pulled from
+	// JS/CSS/XML/JSON/URLs are stored in Words without a frequency and are
+	// absent here. May be nil for non-HTTP sources that do not track counts.
+	WordFreq map[string]int
 	Emails   []string
 	Metadata []string
 	Secrets  []string

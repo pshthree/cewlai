@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 var (
@@ -33,10 +34,14 @@ func FilterWords(words []string, minLen, maxLen int, withNumbers bool) []string 
 }
 
 func keepWord(w string, minLen, maxLen int, withNumbers bool) bool {
-	if len(w) < minLen {
+	// Length limits are expressed in characters, so count runes rather than
+	// bytes; otherwise a multibyte word like "café" is measured as 5 instead
+	// of 4 and filtered incorrectly.
+	n := utf8.RuneCountInString(w)
+	if n < minLen {
 		return false
 	}
-	if maxLen > 0 && len(w) > maxLen {
+	if maxLen > 0 && n > maxLen {
 		return false
 	}
 	return withNumbers || !hasNumbers.MatchString(w)
@@ -84,6 +89,24 @@ func FormatWithCounts(words []string) []string {
 	out := make([]string, len(unique))
 	for i, w := range unique {
 		out[i] = fmt.Sprintf("%d %s", counts[w], w)
+	}
+	return out
+}
+
+// FormatWithCountsFreq prefixes each word in wordList with its occurrence count
+// taken from the precomputed freq map. wordList is the (already deduplicated)
+// list to emit. Words missing from freq — AI-generated, mutated, or structural
+// tokens that carry no prose frequency — are reported as 1, since they are
+// present in the wordlist at least once. A nil freq yields a count of 1 for
+// every word.
+func FormatWithCountsFreq(wordList []string, freq map[string]int) []string {
+	out := make([]string, len(wordList))
+	for i, w := range wordList {
+		n := freq[w]
+		if n < 1 {
+			n = 1
+		}
+		out[i] = fmt.Sprintf("%d %s", n, w)
 	}
 	return out
 }

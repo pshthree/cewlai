@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 type MutateConfig struct {
@@ -63,10 +64,13 @@ func MutateWords(input []string, cfg MutateConfig) []string {
 		if w == "" {
 			return
 		}
-		if cfg.MinLength > 0 && len(w) < cfg.MinLength {
+		// MinLength/MaxLength are character counts, so measure runes rather
+		// than bytes to keep multibyte words consistent with the word filter.
+		n := utf8.RuneCountInString(w)
+		if cfg.MinLength > 0 && n < cfg.MinLength {
 			return
 		}
-		if cfg.MaxLength > 0 && len(w) > cfg.MaxLength {
+		if cfg.MaxLength > 0 && n > cfg.MaxLength {
 			return
 		}
 		if _, exists := seen[w]; exists {

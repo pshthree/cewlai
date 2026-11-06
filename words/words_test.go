@@ -117,6 +117,44 @@ func TestGenerateGroups(t *testing.T) {
 	}
 }
 
+func TestFilterWords_RuneLength(t *testing.T) {
+	// "café" and "naïve" are 4 and 5 runes but 5 and 6 bytes. A byte-based
+	// length check would wrongly filter them at min/max boundaries.
+	in := []string{"café", "naïve", "hi"}
+
+	got := FilterWords(in, 4, 0, true)
+	want := []string{"café", "naïve"}
+	if !sliceEqual(got, want) {
+		t.Errorf("FilterWords minLen=4 = %v, want %v", got, want)
+	}
+
+	got = FilterWords(in, 0, 4, true)
+	want = []string{"café", "hi"}
+	if !sliceEqual(got, want) {
+		t.Errorf("FilterWords maxLen=4 = %v, want %v", got, want)
+	}
+}
+
+func TestFormatWithCountsFreq(t *testing.T) {
+	// Final list is deduplicated; counts must come from the freq map, not from
+	// recounting the list (which would report 1 for everything).
+	wordList := []string{"admin", "login", "newword"}
+	freq := map[string]int{"admin": 5, "login": 2}
+
+	got := FormatWithCountsFreq(wordList, freq)
+	want := []string{"5 admin", "2 login", "1 newword"}
+	if !sliceEqual(got, want) {
+		t.Errorf("FormatWithCountsFreq = %v, want %v", got, want)
+	}
+
+	// A nil freq map must not panic and should report 1 for every word.
+	got = FormatWithCountsFreq([]string{"x", "y"}, nil)
+	want = []string{"1 x", "1 y"}
+	if !sliceEqual(got, want) {
+		t.Errorf("FormatWithCountsFreq(nil) = %v, want %v", got, want)
+	}
+}
+
 func sliceEqual(a, b []string) bool {
 	if len(a) == 0 && len(b) == 0 {
 		return true

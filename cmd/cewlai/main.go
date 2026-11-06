@@ -198,7 +198,7 @@ func main() {
 
 	var aiWords []string
 	if cli.AI {
-		aiWords = enrichWithAI(cli, result)
+		aiWords = enrichWithAI(ctx, cli, result)
 	}
 
 	merged := words.DeduplicateWords(crawlWords, aiWords)
@@ -220,11 +220,11 @@ func main() {
 	final := words.DeduplicateWords(merged)
 	logResult("Final wordlist: %d unique words", len(final))
 
-	writeWordlist(final, cli.Output, cli.Count, cli.Groups)
+	writeWordlist(final, cli.Output, cli.Count, cli.Groups, result.WordFreq)
 	writeExtras(result, cli)
 }
 
-func enrichWithAI(cli CLI, result *crawler.CrawlResult) []string {
+func enrichWithAI(ctx context.Context, cli CLI, result *crawler.CrawlResult) []string {
 	if cli.Provider == "" {
 		logFatal("-p (provider) is required with --ai")
 	}
@@ -253,13 +253,21 @@ func enrichWithAI(cli CLI, result *crawler.CrawlResult) []string {
 	attempt := 0
 
 	for len(aiWords) < target {
+		if ctx.Err() != nil {
+			logInfo("Interrupted during AI enrichment, keeping %d words so far", len(aiWords))
+			break
+		}
 		attempt++
 		remaining := target - len(aiWords)
 
 		prompt := ai.ResolvePrompt(cli.Mode, cli.Prompt, remaining)
-		batch, err := p.GenerateWords(context.Background(), result, prompt, maxTokens)
+		batch, err := p.GenerateWords(ctx, result, prompt, maxTokens)
 		if err != nil {
-			logError("AI request failed: %v", err)
+			if ctx.Err() != nil {
+				logInfo("Interrupted during AI enrichment, keeping %d words so far", len(aiWords))
+			} else {
+				logError("AI request failed: %v", err)
+			}
 			break
 		}
 
@@ -294,23 +302,26 @@ func enrichWithAI(cli CLI, result *crawler.CrawlResult) []string {
 	return aiWords
 }
 
-func writeWordlist(wordList []string, output string, showCount bool, groupSize int) {
+func writeWordlist(wordList []string, output string, showCount bool, groupSize int, freq map[string]int) {
 	w := openOutput(output)
 	if w != os.Stdout {
 		defer func() { _ = w.Close() }()
 	}
 
-	for _, line := range formatWordlist(wordList, showCount, groupSize) {
+	for _, line := range formatWordlist(wordList, showCount, groupSize, freq) {
 		_, _ = fmt.Fprintln(w, line)
 	}
 }
 
-func formatWordlist(wordList []string, showCount bool, groupSize int) []string {
+func formatWordlist(wordList []string, showCount bool, groupSize int, freq map[string]int) []string {
 	if groupSize > 0 {
 		return words.GenerateGroups(wordList, groupSize)
 	}
 	if showCount {
-		return words.FormatWithCounts(wordList)
+		// Use the real per-word crawl frequencies. The final list is already
+		// deduplicated, so counting it directly would report 1 for everything;
+		// freq carries the true occurrence counts from the crawl.
+		return words.FormatWithCountsFreq(wordList, freq)
 	}
 	return wordList
 }
